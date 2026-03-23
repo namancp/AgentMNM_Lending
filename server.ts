@@ -2,15 +2,22 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { google } from 'googleapis';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isProd = process.env.NODE_ENV === 'production';
 
 const app = express();
 app.use(express.json());
 
-// CORS — allow Vite dev server and production URL
+// CORS — allow dev server, AI Studio, and Cloud Run URLs
 const allowedOrigins = [
   'http://localhost:3000',
+  'https://aistudio.google.com',
+  process.env.APP_URL,
   process.env.FRONTEND_URL,
 ].filter(Boolean) as string[];
 
@@ -161,5 +168,14 @@ app.post('/api/book', async (req, res) => {
   }
 });
 
-const PORT = process.env.SERVER_PORT || 3001;
+// Serve built React app in production
+if (isProd) {
+  const distPath = path.join(__dirname, 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
+const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));

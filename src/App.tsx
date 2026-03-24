@@ -991,6 +991,7 @@ export default function App() {
         const response = await fetch('/api/stats/applied-count');
         const data = await response.json();
         setAppliedCount(data.count);
+        // console.log('Global count updated:', data.count); // For debugging
       } catch (error) {
         console.error('Error fetching global stats:', error);
       }
@@ -1007,8 +1008,8 @@ export default function App() {
     fetchStats(); // Initial fetch
     sendPing(); // Initial ping
     
-    const statsInterval = setInterval(fetchStats, 10000); // Poll every 10s
-    const pingInterval = setInterval(sendPing, 20000); // Ping every 20s
+    const statsInterval = setInterval(fetchStats, 5000); // Poll every 5s for faster feedback
+    const pingInterval = setInterval(sendPing, 15000); // Ping every 15s
     
     return () => {
       clearInterval(statsInterval);

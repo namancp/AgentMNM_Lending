@@ -28,20 +28,20 @@ const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
 // --- GLOBAL STATS ---
-let globalAppliedCount = 12;
+let globalAppliedCount = 24 + Math.floor(Math.random() * 10); // Start higher and randomized
 let lastActivity: { name: string, location: string } | null = null;
-let lastPingTime = 0; // Track when the last user was active
+let lastPingTime = Date.now(); // Initialize to now so first user sees growth immediately
 
 const NAMES = ["John", "Sarah", "Michael", "Emma", "David", "Olivia", "James", "Sophia", "Robert", "Isabella", "William", "Mia", "Joseph", "Charlotte", "Thomas", "Amelia"];
 const LOCATIONS = ["London", "New York", "Berlin", "Singapore", "San Francisco", "Dubai", "Sydney", "Toronto", "Paris", "Tokyo", "Mumbai", "Austin", "Chicago", "Amsterdam"];
 
 // Background simulation for global growth
 function simulateGlobalGrowth() {
-  const delay = Math.floor(Math.random() * (60000 - 15000 + 1)) + 15000; // 15s to 60s
+  const delay = Math.floor(Math.random() * (15000 - 5000 + 1)) + 5000; // 5s to 15s for faster feedback
   
   setTimeout(() => {
-    // ONLY increment if there has been a ping in the last 45 seconds
-    const isActive = (Date.now() - lastPingTime) < 45000;
+    // ONLY increment if there has been a ping in the last 60 seconds
+    const isActive = (Date.now() - lastPingTime) < 60000;
     
     if (isActive) {
       // Random increment: 1, 2-3, or 5-7

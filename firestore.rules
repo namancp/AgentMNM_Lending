@@ -36,9 +36,7 @@ service cloud.firestore {
     // Stats collection
     match /stats/global {
       allow read: if true; // Publicly readable for the counter
-      // Allow updates if they are valid increments to the count
-      allow update: if true; 
-      allow create, delete: if isAdmin();
+      allow write: if isAdmin(); // Only admin can manually reset or adjust
     }
 
     // Leads collection

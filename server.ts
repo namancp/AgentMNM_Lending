@@ -5,8 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { addDays, startOfDay, endOfDay, format, parseISO, isAfter, isBefore, addMinutes } from 'date-fns';
 import fs from 'fs';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import admin from 'firebase-admin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,11 +45,21 @@ if (googleClientId && googleClientSecret && googleRefreshToken) {
 let db: any = null;
 try {
   const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
-  const firebaseApp = initializeApp(firebaseConfig);
-  db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-  console.log('Firebase initialized successfully');
+  
+  // Initialize Admin SDK
+  if (admin.apps.length === 0) {
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId
+    });
+  }
+  db = admin.firestore();
+  if (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)') {
+    db = admin.firestore(firebaseConfig.firestoreDatabaseId);
+  }
+  
+  console.log('Firebase Admin initialized successfully');
 } catch (error) {
-  console.error('Error initializing Firebase:', error);
+  console.error('Error initializing Firebase Admin:', error);
 }
 
 // --- GLOBAL STATS ---
@@ -62,15 +71,15 @@ let lastPingTime = Date.now();
 async function syncStatsFromFirestore() {
   if (!db) return;
   try {
-    const statsDoc = await getDoc(doc(db, 'stats', 'global'));
-    if (statsDoc.exists()) {
+    const statsDoc = await db.collection('stats').doc('global').get();
+    if (statsDoc.exists) {
       const data = statsDoc.data();
       globalAppliedCount = data.appliedCount || 42;
       lastActivity = data.lastActivity || null;
       console.log('Stats synced from Firestore:', globalAppliedCount);
     } else {
       // Initialize if doesn't exist
-      await setDoc(doc(db, 'stats', 'global'), {
+      await db.collection('stats').doc('global').set({
         appliedCount: globalAppliedCount,
         lastActivity: null
       });
@@ -107,8 +116,8 @@ function simulateGlobalGrowth() {
 
       // Persist to Firestore
       try {
-        await updateDoc(doc(db, 'stats', 'global'), {
-          appliedCount: increment(inc),
+        await db.collection('stats').doc('global').update({
+          appliedCount: admin.firestore.FieldValue.increment(inc),
           lastActivity: lastActivity
         });
       } catch (error) {
@@ -150,11 +159,11 @@ app.post('/api/leads/signup', async (req, res) => {
     // Persist to Firestore
     if (db) {
       try {
-        await updateDoc(doc(db, 'stats', 'global'), {
-          appliedCount: increment(1),
+        await db.collection('stats').doc('global').update({
+          appliedCount: admin.firestore.FieldValue.increment(1),
           lastActivity: lastActivity
         });
-        await addDoc(collection(db, 'leads'), {
+        await db.collection('leads').add({
           name,
           email,
           company: company || '',

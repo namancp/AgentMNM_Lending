@@ -14,22 +14,34 @@ app.use(express.json());
 const PORT = 3000;
 
 // Google Calendar Setup
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.APP_URL + '/auth/callback' // Not used for refresh token flow but required
-);
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const googleRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+const appUrl = process.env.APP_URL || 'http://localhost:3000';
 
-oauth2Client.setCredentials({
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-});
+let calendar: any = null;
+let sheets: any = null;
 
-const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+if (googleClientId && googleClientSecret && googleRefreshToken) {
+  const oauth2Client = new google.auth.OAuth2(
+    googleClientId,
+    googleClientSecret,
+    appUrl + '/auth/callback'
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: googleRefreshToken,
+  });
+
+  calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+  sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+} else {
+  console.warn('Google API credentials missing. Calendar and Sheets features will be disabled.');
+}
 
 // --- GLOBAL STATS ---
 let globalAppliedCount = 24 + Math.floor(Math.random() * 10); // Start higher and randomized
-let lastActivity: { name: string, location: string } | null = null;
+let lastActivity: { name: string, location: string, timestamp: number } | null = null;
 let lastPingTime = Date.now(); // Initialize to now so first user sees growth immediately
 
 const NAMES = ["John", "Sarah", "Michael", "Emma", "David", "Olivia", "James", "Sophia", "Robert", "Isabella", "William", "Mia", "Joseph", "Charlotte", "Thomas", "Amelia"];
@@ -55,7 +67,8 @@ function simulateGlobalGrowth() {
       // Update last activity for notifications
       lastActivity = {
         name: NAMES[Math.floor(Math.random() * NAMES.length)],
-        location: LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)]
+        location: LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)],
+        timestamp: Date.now()
       };
     }
     
@@ -88,11 +101,11 @@ app.post('/api/leads/signup', async (req, res) => {
 
     // Increment global count on real signup
     globalAppliedCount += 1;
-    lastActivity = { name, location: 'Somewhere' };
+    lastActivity = { name, location: 'Somewhere', timestamp: Date.now() };
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    if (!spreadsheetId) {
-      console.warn('GOOGLE_SHEET_ID not set. Lead not saved to sheet.');
+    if (!sheets || !spreadsheetId) {
+      console.warn('Google Sheets not configured. Lead not saved to sheet.');
       return res.json({ success: true, message: 'Lead received (but sheet not configured)' });
     }
 
@@ -121,6 +134,9 @@ app.post('/api/leads/signup', async (req, res) => {
 // API: Get available slots
 app.get('/api/calendar/slots', async (req, res) => {
   try {
+    if (!calendar) {
+      return res.status(503).json({ error: 'Calendar service not configured' });
+    }
     const { date } = req.query; // YYYY-MM-DD
     if (!date) return res.status(400).json({ error: 'Date is required' });
 
@@ -181,6 +197,9 @@ app.get('/api/calendar/slots', async (req, res) => {
 // API: Book an event
 app.post('/api/calendar/book', async (req, res) => {
   try {
+    if (!calendar) {
+      return res.status(503).json({ error: 'Calendar service not configured' });
+    }
     const { startTime, name, email, company } = req.body;
     if (!startTime || !name || !email) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -223,6 +242,24 @@ app.post('/api/calendar/book', async (req, res) => {
     console.error('Error booking event:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// --- ADMIN: Private Health Check ---
+// You can check this by going to your-app-url.run.app/api/admin/health
+app.get('/api/admin/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    environment: process.env.NODE_ENV || 'development',
+    integrations: {
+      googleCalendar: !!calendar,
+      googleSheets: !!sheets,
+      googleSheetId: !!process.env.GOOGLE_SHEET_ID,
+    },
+    stats: {
+      globalAppliedCount,
+      lastActivity
+    }
+  });
 });
 
 // Vite Integration

@@ -25,9 +25,12 @@ import {
   Loader2,
   Check,
   Mail,
-  Building2
+  Building2,
+  MapPin,
+  CalendarDays
 } from 'lucide-react';
-import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
+import { format, addDays, startOfToday, isSameDay, parseISO, addMinutes } from 'date-fns';
+import { Toaster, toast } from 'sonner';
 
 // --- Components ---
 
@@ -243,6 +246,232 @@ const ThreeBackground = () => {
         <FloatingParticles />
       </Canvas>
     </div>
+  );
+};
+
+// --- Calendar Booking Modal ---
+
+const CalendarBookingModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  const [selectedDate, setSelectedDate] = useState(startOfToday());
+  const [slots, setSlots] = useState<string[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const [formData, setFormData] = useState({ name: '', email: '', company: '' });
+  const [step, setStep] = useState(1); // 1: Date/Time, 2: Details
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchSlots(selectedDate);
+    }
+  }, [isOpen, selectedDate]);
+
+  const fetchSlots = async (date: Date) => {
+    setLoading(true);
+    try {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const response = await fetch(`/api/calendar/slots?date=${dateStr}`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      setSlots(data.slots || []);
+    } catch (error) {
+      console.error('Error fetching slots:', error);
+      toast.error('Could not load available slots. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSlot) return;
+    setBooking(true);
+    try {
+      const response = await fetch('/api/calendar/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startTime: selectedSlot,
+          ...formData
+        }),
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      
+      toast.success('Strategy session booked! Check your email for the invite.');
+      onClose();
+      setStep(1);
+      setFormData({ name: '', email: '', company: '' });
+      setSelectedSlot(null);
+    } catch (error) {
+      console.error('Error booking:', error);
+      toast.error('Booking failed. Please try again.');
+    } finally {
+      setBooking(false);
+    }
+  };
+
+  const days = Array.from({ length: 14 }, (_, i) => addDays(startOfToday(), i));
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="relative w-full max-w-2xl glass-card p-10 rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden"
+          >
+            <button onClick={onClose} className="absolute top-6 right-6 text-white/30 hover:text-white transition-colors">
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold mb-2">Book Your Growth Audit</h2>
+              <p className="text-white/50">15-minute high-intensity strategy session.</p>
+            </div>
+
+            {step === 1 ? (
+              <div className="space-y-8">
+                {/* Date Picker */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-white/30 mb-4">Select Date</label>
+                  <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+                    {days.map((day) => (
+                      <button
+                        key={day.toISOString()}
+                        onClick={() => setSelectedDate(day)}
+                        className={`flex-shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center transition-all border ${
+                          isSameDay(day, selectedDate) 
+                            ? 'bg-brand-purple border-brand-purple text-white shadow-lg shadow-brand-purple/20' 
+                            : 'bg-white/5 border-white/10 text-white/50 hover:border-white/30'
+                        }`}
+                      >
+                        <span className="text-[10px] uppercase font-bold mb-1">{format(day, 'EEE')}</span>
+                        <span className="text-xl font-bold">{format(day, 'd')}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Time Slots */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-white/30 mb-4">Available Times (UTC)</label>
+                  {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-brand-purple" />
+                    </div>
+                  ) : slots.length > 0 ? (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {slots.map((slot) => (
+                        <button
+                          key={slot}
+                          onClick={() => setSelectedSlot(slot)}
+                          className={`py-3 rounded-xl text-sm font-medium transition-all border ${
+                            selectedSlot === slot
+                              ? 'bg-brand-purple/20 border-brand-purple text-brand-purple-light'
+                              : 'bg-white/5 border-white/10 text-white/70 hover:border-white/20'
+                          }`}
+                        >
+                          {format(parseISO(slot), 'HH:mm')}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 bg-white/5 rounded-3xl border border-dashed border-white/10">
+                      <p className="text-white/30">No slots available for this day.</p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  disabled={!selectedSlot}
+                  onClick={() => setStep(2)}
+                  className="w-full bg-brand-purple text-white py-4 rounded-full font-bold hover:bg-brand-purple-light transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  Next Step
+                  <ArrowRight className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleBook} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-white/30 mb-3">Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.name}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:border-brand-purple transition-all"
+                      placeholder="John Doe"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-white/30 mb-3">Email</label>
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:border-brand-purple transition-all"
+                      placeholder="john@company.com"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-white/30 mb-3">Company</label>
+                  <input
+                    type="text"
+                    value={formData.company}
+                    onChange={(e) => setFormData({...formData, company: e.target.value})}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:border-brand-purple transition-all"
+                    placeholder="Acme Corp"
+                  />
+                </div>
+
+                <div className="bg-brand-purple/10 p-4 rounded-2xl border border-brand-purple/20 flex items-center gap-4">
+                  <div className="w-10 h-10 bg-brand-purple/20 rounded-full flex items-center justify-center">
+                    <CalendarDays className="text-brand-purple-light w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-white/50 uppercase font-bold tracking-widest">Selected Slot</p>
+                    <p className="font-bold text-brand-purple-light">
+                      {format(parseISO(selectedSlot!), 'MMMM d, yyyy')} at {format(parseISO(selectedSlot!), 'HH:mm')} UTC
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setStep(1)}
+                    className="flex-1 bg-white/5 text-white py-4 rounded-full font-bold hover:bg-white/10 transition-all"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={booking}
+                    className="flex-[2] bg-brand-purple text-white py-4 rounded-full font-bold hover:bg-brand-purple-light transition-all flex items-center justify-center gap-2"
+                  >
+                    {booking ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirm Booking'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -768,7 +997,7 @@ const HomePage = ({ onCtaClick, appliedCount, onDownloadClick }: { onCtaClick: (
   );
 };
 
-const BetaSignupPage = ({ setActivePage, onSignupSuccess }: { setActivePage: (page: string) => void, onSignupSuccess: () => void }) => {
+const BetaSignupPage = ({ setActivePage, onSignupSuccess, onBookClick }: { setActivePage: (page: string) => void, onSignupSuccess: () => void, onBookClick: () => void }) => {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -789,10 +1018,11 @@ const BetaSignupPage = ({ setActivePage, onSignupSuccess }: { setActivePage: (pa
       });
       if (!response.ok) throw new Error('Failed to submit');
       onSignupSuccess(); // Increment counter
+      toast.success('You’re on the waitlist! 🚀');
       setSubmitted(true);
     } catch (error) {
       console.error('Error submitting application:', error);
-      alert('Something went wrong. Please try again.');
+      toast.error('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -874,7 +1104,7 @@ const BetaSignupPage = ({ setActivePage, onSignupSuccess }: { setActivePage: (pa
               Book a 15-minute discovery call to see if your business is a fit for the private beta.
             </p>
             <button 
-              onClick={() => window.open('https://calendly.com/divya-noorconnect', '_blank')}
+              onClick={onBookClick}
               className="bg-brand-purple text-white px-10 py-4 rounded-full font-bold text-lg hover:bg-brand-purple-light transition-all flex items-center justify-center gap-2 mx-auto"
             >
               <Calendar className="w-5 h-5" />
@@ -983,6 +1213,7 @@ export default function App() {
   const [activePage, setActivePage] = useState('home');
   const [appliedCount, setAppliedCount] = useState(12);
   const [isPlaybookModalOpen, setIsPlaybookModalOpen] = useState(false);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
 
   // Poll for global stats and send heartbeat
   useEffect(() => {
@@ -991,7 +1222,6 @@ export default function App() {
         const response = await fetch('/api/stats/applied-count');
         const data = await response.json();
         setAppliedCount(data.count);
-        // console.log('Global count updated:', data.count); // For debugging
       } catch (error) {
         console.error('Error fetching global stats:', error);
       }
@@ -1038,7 +1268,7 @@ export default function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'home': return <HomePage onCtaClick={() => setActivePage('signup')} appliedCount={appliedCount} onDownloadClick={() => setIsPlaybookModalOpen(true)} />;
-      case 'signup': return <BetaSignupPage setActivePage={setActivePage} onSignupSuccess={() => setAppliedCount(prev => prev + 1)} />;
+      case 'signup': return <BetaSignupPage setActivePage={setActivePage} onSignupSuccess={() => setAppliedCount(prev => prev + 1)} onBookClick={() => setIsBookingModalOpen(true)} />;
       default: return <HomePage onCtaClick={() => setActivePage('signup')} appliedCount={appliedCount} onDownloadClick={() => setIsPlaybookModalOpen(true)} />;
     }
   };
@@ -1063,8 +1293,11 @@ export default function App() {
       </main>
 
       <PlaybookModal isOpen={isPlaybookModalOpen} onClose={() => setIsPlaybookModalOpen(false)} />
+      <CalendarBookingModal isOpen={isBookingModalOpen} onClose={() => setIsBookingModalOpen(false)} />
 
       <Footer setActivePage={setActivePage} scrollToSection={scrollToSection} />
+      
+      <Toaster theme="dark" position="bottom-right" />
     </div>
   );
 }

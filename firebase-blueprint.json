@@ -2,23 +2,15 @@
   "entities": {
     "GlobalStats": {
       "title": "Global Stats",
-      "description": "Stores the global applied count and last activity information.",
+      "description": "Stores the global application count.",
       "type": "object",
       "properties": {
-        "appliedCount": {
+        "applicationCount": {
           "type": "number",
           "description": "The current total number of applications."
-        },
-        "lastActivity": {
-          "type": "object",
-          "properties": {
-            "name": { "type": "string" },
-            "location": { "type": "string" },
-            "timestamp": { "type": "number" }
-          }
         }
       },
-      "required": ["appliedCount"]
+      "required": ["applicationCount"]
     },
     "Lead": {
       "title": "Lead",
@@ -35,7 +27,7 @@
     }
   },
   "firestore": {
-    "/stats/global": {
+    "/GlobalStats/global": {
       "schema": "GlobalStats",
       "description": "The single document containing global application statistics."
     },

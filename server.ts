@@ -5,7 +5,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { addDays, startOfDay, endOfDay, format, parseISO, isAfter, isBefore, addMinutes } from 'date-fns';
 import fs from 'fs';
-import admin from 'firebase-admin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,138 +40,12 @@ if (googleClientId && googleClientSecret && googleRefreshToken) {
   console.warn('Google API credentials missing. Calendar and Sheets features will be disabled.');
 }
 
-// --- FIREBASE SETUP ---
-let db: any = null;
-try {
-  const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
-  
-  // Initialize Admin SDK
-  if (admin.apps.length === 0) {
-    admin.initializeApp({
-      projectId: firebaseConfig.projectId
-    });
-  }
-  db = admin.firestore();
-  if (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)') {
-    db = admin.firestore(firebaseConfig.firestoreDatabaseId);
-  }
-  
-  console.log('Firebase Admin initialized successfully');
-} catch (error) {
-  console.error('Error initializing Firebase Admin:', error);
-}
-
-// --- GLOBAL STATS ---
-let globalAppliedCount = 42; 
-let lastActivity: { name: string, location: string, timestamp: number } | null = null;
-let lastPingTime = Date.now();
-
-// Sync stats from Firestore on startup
-async function syncStatsFromFirestore() {
-  if (!db) return;
-  try {
-    const statsDoc = await db.collection('stats').doc('global').get();
-    if (statsDoc.exists) {
-      const data = statsDoc.data();
-      globalAppliedCount = data.appliedCount || 42;
-      lastActivity = data.lastActivity || null;
-      console.log('Stats synced from Firestore:', globalAppliedCount);
-    } else {
-      // Initialize if doesn't exist
-      await db.collection('stats').doc('global').set({
-        appliedCount: globalAppliedCount,
-        lastActivity: null
-      });
-    }
-  } catch (error) {
-    console.error('Error syncing stats from Firestore:', error);
-  }
-}
-syncStatsFromFirestore();
-
-const NAMES = ["John", "Sarah", "Michael", "Emma", "David", "Olivia", "James", "Sophia", "Robert", "Isabella", "William", "Mia", "Joseph", "Charlotte", "Thomas", "Amelia"];
-const LOCATIONS = ["London", "New York", "Berlin", "Singapore", "San Francisco", "Dubai", "Sydney", "Toronto", "Paris", "Tokyo", "Mumbai", "Austin", "Chicago", "Amsterdam"];
-
-// Background simulation for global growth
-function simulateGlobalGrowth() {
-  const delay = Math.floor(Math.random() * (15000 - 5000 + 1)) + 5000; 
-  
-  setTimeout(async () => {
-    const isActive = (Date.now() - lastPingTime) < 60000;
-    
-    if (isActive && db) {
-      const rand = Math.random();
-      let inc = 1;
-      if (rand > 0.9) inc = Math.floor(Math.random() * 3) + 5; 
-      else if (rand > 0.7) inc = Math.floor(Math.random() * 2) + 2; 
-      
-      globalAppliedCount += inc;
-      
-      lastActivity = {
-        name: NAMES[Math.floor(Math.random() * NAMES.length)],
-        location: LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)],
-        timestamp: Date.now()
-      };
-
-      // Persist to Firestore
-      try {
-        await db.collection('stats').doc('global').update({
-          appliedCount: admin.firestore.FieldValue.increment(inc),
-          lastActivity: lastActivity
-        });
-      } catch (error) {
-        console.error('Error updating stats in Firestore:', error);
-      }
-    }
-    
-    simulateGlobalGrowth();
-  }, delay);
-}
-simulateGlobalGrowth();
-
-// API: Ping to keep counter alive
-app.post('/api/stats/ping', (req, res) => {
-  lastPingTime = Date.now();
-  res.json({ success: true });
-});
-
-// API: Get global stats
-app.get('/api/stats/applied-count', (req, res) => {
-  res.json({ 
-    count: globalAppliedCount,
-    lastActivity 
-  });
-});
-
-// API: Lead Signup (Google Sheets + Firestore)
+// API: Lead Signup (Google Sheets)
 app.post('/api/leads/signup', async (req, res) => {
   try {
     const { name, email, company, useCase } = req.body;
     if (!name || !email) {
       return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    // Increment global count on real signup
-    globalAppliedCount += 1;
-    lastActivity = { name, location: 'Somewhere', timestamp: Date.now() };
-
-    // Persist to Firestore
-    if (db) {
-      try {
-        await db.collection('stats').doc('global').update({
-          appliedCount: admin.firestore.FieldValue.increment(1),
-          lastActivity: lastActivity
-        });
-        await db.collection('leads').add({
-          name,
-          email,
-          company: company || '',
-          useCase: useCase || '',
-          timestamp: Date.now()
-        });
-      } catch (error) {
-        console.error('Error persisting to Firestore:', error);
-      }
     }
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
@@ -326,10 +199,6 @@ app.get('/api/admin/health', (req, res) => {
       googleCalendar: !!calendar,
       googleSheets: !!sheets,
       googleSheetId: !!process.env.GOOGLE_SHEET_ID,
-    },
-    stats: {
-      globalAppliedCount,
-      lastActivity
     }
   });
 });

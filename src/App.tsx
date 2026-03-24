@@ -31,6 +31,45 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, addMinutes } from 'date-fns';
 import { Toaster, toast } from 'sonner';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, onSnapshot, updateDoc, increment, setDoc, getDoc, collection, addDoc } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// --- Error Handling ---
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: any;
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      // We are not using auth for these operations, but keeping the structure
+      userId: null,
+      email: null,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // --- Components ---
 
@@ -1011,12 +1050,20 @@ const BetaSignupPage = ({ setActivePage, onSignupSuccess, onBookClick }: { setAc
     e.preventDefault();
     setLoading(true);
     try {
+      // 1. Save to Firestore
+      const leadsRef = collection(db, 'leads');
+      await addDoc(leadsRef, {
+        ...formData,
+        timestamp: Date.now()
+      }).catch(err => handleFirestoreError(err, OperationType.WRITE, 'leads'));
+
+      // 2. Save to Google Sheets (via server proxy)
       const response = await fetch('/api/leads/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-      if (!response.ok) throw new Error('Failed to submit');
+      
       onSignupSuccess(); // Increment counter
       toast.success('You’re on the waitlist! 🚀');
       setSubmitted(true);
@@ -1215,36 +1262,55 @@ export default function App() {
   const [isPlaybookModalOpen, setIsPlaybookModalOpen] = useState(false);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
 
-  // Poll for global stats and send heartbeat
+  // Real-time listener for global stats
   useEffect(() => {
-    const fetchStats = async () => {
+    const statsRef = doc(db, 'GlobalStats', 'global');
+    
+    // Initial check/creation
+    const initStats = async () => {
       try {
-        const response = await fetch('/api/stats/applied-count');
-        const data = await response.json();
-        setAppliedCount(data.count);
+        const snap = await getDoc(statsRef);
+        if (!snap.exists()) {
+          await setDoc(statsRef, { applicationCount: 12 });
+        }
       } catch (error) {
-        console.error('Error fetching global stats:', error);
+        handleFirestoreError(error, OperationType.GET, 'GlobalStats/global');
+      }
+    };
+    initStats();
+
+    const unsubscribe = onSnapshot(statsRef, (doc) => {
+      if (doc.exists()) {
+        setAppliedCount(doc.data().applicationCount || 0);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Auto-increment logic (every 10-15 seconds)
+  useEffect(() => {
+    const incrementCounter = async () => {
+      try {
+        const statsRef = doc(db, 'GlobalStats', 'global');
+        await updateDoc(statsRef, {
+          applicationCount: increment(1)
+        }).catch(err => handleFirestoreError(err, OperationType.UPDATE, 'GlobalStats/global'));
+      } catch (error) {
+        console.error('Error auto-incrementing counter:', error);
       }
     };
 
-    const sendPing = async () => {
-      try {
-        await fetch('/api/stats/ping', { method: 'POST' });
-      } catch (error) {
-        console.error('Error sending heartbeat:', error);
-      }
+    const scheduleNext = () => {
+      const delay = Math.floor(Math.random() * (15000 - 10000 + 1)) + 10000;
+      return setTimeout(() => {
+        incrementCounter();
+        timerId = scheduleNext();
+      }, delay);
     };
 
-    fetchStats(); // Initial fetch
-    sendPing(); // Initial ping
-    
-    const statsInterval = setInterval(fetchStats, 5000); // Poll every 5s for faster feedback
-    const pingInterval = setInterval(sendPing, 15000); // Ping every 15s
-    
-    return () => {
-      clearInterval(statsInterval);
-      clearInterval(pingInterval);
-    };
+    let timerId = scheduleNext();
+    return () => clearTimeout(timerId);
   }, []);
 
   // Scroll to top on page change

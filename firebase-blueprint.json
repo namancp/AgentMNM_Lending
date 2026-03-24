@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "GlobalStats": {
+      "title": "Global Stats",
+      "description": "Stores the global applied count and last activity information.",
+      "type": "object",
+      "properties": {
+        "appliedCount": {
+          "type": "number",
+          "description": "The current total number of applications."
+        },
+        "lastActivity": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "location": { "type": "string" },
+            "timestamp": { "type": "number" }
+          }
+        }
+      },
+      "required": ["appliedCount"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "A signup lead from the beta application form.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "company": { "type": "string" },
+        "useCase": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["name", "email", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/stats/global": {
+      "schema": "GlobalStats",
+      "description": "The single document containing global application statistics."
+    },
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "A collection of all beta application leads."
+    }
+  }
+}

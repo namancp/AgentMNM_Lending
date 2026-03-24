@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: stats
+    // Document ID: global
+    // Fields:
+    //   - appliedCount: number (required) - Total applications
+    //   - lastActivity: map (optional) - { name: string, location: string, timestamp: number }
+    //
+    // Collection: leads
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required)
+    //   - email: string (required, email format)
+    //   - company: string (optional)
+    //   - useCase: string (optional)
+    //   - timestamp: number (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "namanrungta4@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // Stats collection
+    match /stats/global {
+      allow read: if true; // Publicly readable for the counter
+      // Allow updates if they are valid increments to the count
+      allow update: if true; 
+      allow create, delete: if isAdmin();
+    }
+
+    // Leads collection
+    match /leads/{leadId} {
+      allow create: if true; // Anyone can sign up
+      allow read, update, delete: if isAdmin(); // Only admin can see leads
+    }
+
+    // Users collection (for roles)
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+  }
+}

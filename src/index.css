@@ -24,6 +24,19 @@
     border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
+  .glow-purple {
+    box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+  }
+
+  .glow-purple-hover:hover {
+    box-shadow: 0 0 30px rgba(147, 51, 234, 0.5);
+  }
+
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.1), transparent);
+  }
+
   .text-gradient {
     background: linear-gradient(to right, #7dd3fc, #c8a0f0);
     -webkit-background-clip: text;

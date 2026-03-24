@@ -27,6 +27,57 @@ oauth2Client.setCredentials({
 const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
+// --- GLOBAL STATS ---
+let globalAppliedCount = 12;
+let lastActivity: { name: string, location: string } | null = null;
+let lastPingTime = 0; // Track when the last user was active
+
+const NAMES = ["John", "Sarah", "Michael", "Emma", "David", "Olivia", "James", "Sophia", "Robert", "Isabella", "William", "Mia", "Joseph", "Charlotte", "Thomas", "Amelia"];
+const LOCATIONS = ["London", "New York", "Berlin", "Singapore", "San Francisco", "Dubai", "Sydney", "Toronto", "Paris", "Tokyo", "Mumbai", "Austin", "Chicago", "Amsterdam"];
+
+// Background simulation for global growth
+function simulateGlobalGrowth() {
+  const delay = Math.floor(Math.random() * (60000 - 15000 + 1)) + 15000; // 15s to 60s
+  
+  setTimeout(() => {
+    // ONLY increment if there has been a ping in the last 45 seconds
+    const isActive = (Date.now() - lastPingTime) < 45000;
+    
+    if (isActive) {
+      // Random increment: 1, 2-3, or 5-7
+      const rand = Math.random();
+      let increment = 1;
+      if (rand > 0.9) increment = Math.floor(Math.random() * 3) + 5; // 5-7
+      else if (rand > 0.7) increment = Math.floor(Math.random() * 2) + 2; // 2-3
+      
+      globalAppliedCount += increment;
+      
+      // Update last activity for notifications
+      lastActivity = {
+        name: NAMES[Math.floor(Math.random() * NAMES.length)],
+        location: LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)]
+      };
+    }
+    
+    simulateGlobalGrowth();
+  }, delay);
+}
+simulateGlobalGrowth();
+
+// API: Ping to keep counter alive
+app.post('/api/stats/ping', (req, res) => {
+  lastPingTime = Date.now();
+  res.json({ success: true });
+});
+
+// API: Get global stats
+app.get('/api/stats/applied-count', (req, res) => {
+  res.json({ 
+    count: globalAppliedCount,
+    lastActivity 
+  });
+});
+
 // API: Lead Signup (Google Sheets)
 app.post('/api/leads/signup', async (req, res) => {
   try {
@@ -34,6 +85,10 @@ app.post('/api/leads/signup', async (req, res) => {
     if (!name || !email) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // Increment global count on real signup
+    globalAppliedCount += 1;
+    lastActivity = { name, location: 'Somewhere' };
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     if (!spreadsheetId) {
